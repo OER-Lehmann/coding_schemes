@@ -1,0 +1,95 @@
+pb=tkProgressBar(title = "progress bar", min = 0, max = 5000, width = 300)
+for(j in 1:5000)
+{
+	setTkProgressBar(pb, j, label=paste( round(j/5000*100, 0), "% done"))
+	phylo.diversity.dich(trees[[j]],"ages.txt")
+}
+close(pb)
+
+phylo.diversity.dich=function(tree,raw.ages)
+{
+library(ape)
+library(paleotree)
+library(strap)
+library(tcltk)
+
+ptm=proc.time()
+
+ages=read.table(raw.ages,row.names = 1, sep = "\t", header = TRUE)
+droppers=c("Petrolacosaurus_kansensis","Youngina_capensis","Acerosodontosaurus_piveteaui","Paliguana_whitei","Planocephalosaurus_robinsonae","Gephyrosaurus_bridensis","Cteniogenys_sp.","Simoedosaurus_lemoinei")
+tree.trim=drop.tip(tree,droppers)
+nodeDate=rep(NA,Nnode(tree.trim))
+nodeDate[1]=269.3
+tree1=timePaleoPhy(tree.trim, ages, type = "mbl", node.mins=nodeDate, vartime=0.1)
+pseudo.edge=tree1$edge
+
+###Change the number of the first node for the root time
+n.term=length(tree1$tip.label)
+temp.2=pseudo.edge[,1]==n.term+1
+temp.2=which(temp.2==TRUE)
+pseudo.edge[temp.2,1]=tree1$root.time
+
+###Change the number of each node for its calibrated age to get branch ranges
+n.branches=length(tree1$edge.length)+1
+for(j in 2:(n.branches-n.term))
+{
+	temp.3a=pseudo.edge[,1]==n.term+j
+	temp.3b=pseudo.edge[,2]==n.term+j
+	temp.3a=which(temp.3a==TRUE)
+	temp.3b=which(temp.3b==TRUE)
+	repl.age=pseudo.edge[temp.3b,1]-tree1$edge.length[temp.3b]
+	pseudo.edge[temp.3b,2]=repl.age
+	pseudo.edge[temp.3a,1]=repl.age
+}
+
+###Change tip.label for LAD of the tip
+for(i in 1:n.term)
+{
+	temp=pseudo.edge[,2]==i
+	temp=which(temp==TRUE)
+	pseudo.edge[temp,2]=ages[i,"LAD"]
+}
+
+###Set time bins
+time.bins=c(270,252.17,251.2,247.2,242,233)
+
+###Sum a small value to the youngest boundary
+time.bins[6]=time.bins[6]+min(time.bins)/1000
+
+###Count number of branches per time bin
+phylo.div2=NULL
+nu.bins=length(time.bins)-1
+for(k in 1:nu.bins)
+{
+	phylo.div2[k]=sum(pseudo.edge[,1]>time.bins[k+1] & pseudo.edge[,2]<time.bins[k])
+}
+
+###Calculate mean of time bins for plotting
+age.means=NULL
+for(l in 1:nu.bins)
+{
+	age.means[l]=mean(time.bins[l:c(l+1)])
+}
+
+###Calculate taxic diversity
+###Generate matrix with temporal ranges of terminals
+ages.term=matrix(ncol=2,nrow=length(tree.trim$tip.label))
+for(n in 1:dim(ages)[1])
+{
+	ages.term[n,1]=ages[n,1]
+}
+for (o in 1:dim(ages)[1])
+{
+	ages.term[o,2]=ages[o,2]
+}
+
+###Calculate taxic diversity per time bin
+taxic.div=NULL
+for(m in 1:nu.bins)
+{
+	taxic.div[m]=sum(ages.term[,1]>time.bins[m+1] & ages.term[,2]<time.bins[m])
+}
+
+print(phylo.div2)
+proc.time() - ptm
+}
